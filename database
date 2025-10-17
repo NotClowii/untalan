@@ -1,0 +1,138 @@
+import mysql.connector
+from datetime import datetime
+
+def now_ts():
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+class Database:
+    def __init__(self):
+        # XAMPP MySQL connection details
+        self.config = {
+            "host": "localhost",
+            "user": "root",
+            "password": "",
+            "database": "capstem"
+        }
+        self._ensure_database_exists()
+        self._ensure_tables()
+
+    def _ensure_database_exists(self):
+        """Create database if it doesn't exist"""
+        try:
+            # Connect without database first
+            temp_config = self.config.copy()
+            db_name = temp_config.pop("database")
+
+            conn = mysql.connector.connect(**temp_config)
+            cur = conn.cursor()
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS {db_name}")
+            conn.commit()
+            conn.close()
+            print(f" Database '{db_name}' ready")
+        except Exception as e:
+            print(f" Error creating database: {e}")
+
+    def _conn(self):
+        """Get database connection"""
+        return mysql.connector.connect(**self.config)
+
+    def _ensure_tables(self):
+        """Create all tables if they don't exist"""
+        conn = self._conn()
+        cur = conn.cursor()
+
+        # USERS TABLE - added status and warnings
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                email VARCHAR(100),
+                phone VARCHAR(50),
+                fullname VARCHAR(100),
+                address VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'Active',
+                warnings INT DEFAULT 0
+            )
+        """)
+
+        # DOCUMENTS TABLE
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL,
+                doc_type VARCHAR(100),
+                reason TEXT,
+                status VARCHAR(50),
+                requested_on DATETIME
+            )
+        """)
+
+        # CHECKUPS TABLE
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS checkups (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL,
+                scheduled_date DATE,
+                requested_on DATETIME,
+                status VARCHAR(50)
+            )
+        """)
+
+        # COMPLAINTS TABLE
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS complaints (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL,
+                complaint TEXT,
+                photo TEXT,
+                submitted_on DATETIME,
+                status VARCHAR(50)
+            )
+        """)
+
+        # NOTIFICATIONS TABLE
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL,
+                type VARCHAR(100),
+                message TEXT,
+                created_on DATETIME
+            )
+        """)
+
+        conn.commit()
+        conn.close()
+        print("✅ All tables created/verified")
+
+    def execute(self, query, params=(), fetchone=False, fetchall=False, commit=False):
+        """Universal query executor"""
+        conn = self._conn()
+        cur = conn.cursor(dictionary=True)
+
+        try:
+            cur.execute(query, params)
+
+            result = None
+            if fetchone:
+                result = cur.fetchone()
+            elif fetchall:
+                result = cur.fetchall()
+
+            if commit:
+                conn.commit()
+
+            # For INSERT operations, return last insert id
+            if commit and query.strip().upper().startswith('INSERT'):
+                cur.execute("SELECT LAST_INSERT_ID() as id")
+                result = cur.fetchone()
+                if result:
+                    return (result['id'],)  # Return as tuple to match SQLite format
+
+            conn.close()
+            return result
+        except Exception as e:
+            print(f" Database error: {e}")
+            conn.close()
+            return None
